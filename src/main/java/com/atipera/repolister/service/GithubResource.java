@@ -5,7 +5,6 @@ import com.atipera.repolister.data.Repo;
 import com.atipera.repolister.data.RepoResponse;
 import com.atipera.repolister.exception.UserNotFoundException;
 import io.smallrye.mutiny.Uni;
-import io.smallrye.mutiny.unchecked.Unchecked;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -30,19 +29,23 @@ public class GithubResource {
                 .onFailure(ClientWebApplicationException.class)
                 .transform(this::handleException)
                 .onItem()
-                .transformToUni(Unchecked.function(repos -> {
-                    if (repos == null || repos.isEmpty()) {
-                        throw new UserNotFoundException("User not found");
-                    }
-                    List<Uni<RepoResponse>> repoResponses = repos.stream()
-                            .filter(repo -> !repo.isFork())
-                            .map(this::fetchBranches)
-                            .toList();
-                    return Uni.combine().all().unis(repoResponses).with(responses ->
-                            responses.stream()
-                                    .map(item -> (RepoResponse) item)
-                                    .toList());
-                }));
+                .transformToUni(this::filterRepos);
+    }
+
+    private Uni<List<RepoResponse>> filterRepos(List<Repo> repos) {
+        if (repos == null || repos.isEmpty()) {
+            throw new UserNotFoundException("User not found");
+        }
+
+        List<Uni<RepoResponse>> repoResponses = repos.stream()
+                .filter(repo -> !repo.isFork())
+                .map(this::fetchBranches)
+                .toList();
+
+        return Uni.combine().all().unis(repoResponses)
+                .with(responses -> responses.stream()
+                        .map(response -> (RepoResponse) response)
+                        .toList());
     }
 
     private Uni<RepoResponse> fetchBranches(Repo repo) {
